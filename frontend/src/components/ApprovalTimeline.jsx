@@ -22,8 +22,11 @@ function formatDate(dateStr) {
 }
 
 export function ApprovalTimeline({ actions, status, amount }) {
+  const MANAGER_THRESHOLD = 2500;
   const EXECUTIVE_THRESHOLD = 50000;
-  const steps = ['submission', 'manager', 'finance'];
+  // Under $2,500 → manager only; $2,500–$49,999 → manager + finance; $50,000+ → all three
+  const steps = ['submission', 'manager'];
+  if (amount >= MANAGER_THRESHOLD) steps.push('finance');
   if (amount >= EXECUTIVE_THRESHOLD) steps.push('executive');
 
   const actionsByStep = {};

@@ -48,6 +48,10 @@ export const api = {
   updateBudget: (department, year, category, data) =>
     request('PUT', `/budgets/${encodeURIComponent(department)}/${year}/${encodeURIComponent(category)}`, data),
 
+  // Similar approved requests (for formatting reference)
+  getSimilarRequests: (category) =>
+    request('GET', `/requests/similar${category ? '?category=' + encodeURIComponent(category) : ''}`),
+
   // Dashboard
   getDashboard: () => request('GET', '/dashboard'),
 };

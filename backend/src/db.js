@@ -111,4 +111,13 @@ if (userCount === 0) {
   users.forEach(u => console.log(`  ${u.role.padEnd(12)} ${u.email}`));
 }
 
+// Schema migrations — add new columns if they don't exist yet
+const migrations = [
+  "ALTER TABLE capex_requests ADD COLUMN problem TEXT",
+  "ALTER TABLE capex_requests ADD COLUMN solution TEXT",
+  "ALTER TABLE capex_requests ADD COLUMN photos TEXT NOT NULL DEFAULT '[]'",
+  "ALTER TABLE capex_requests ADD COLUMN bids TEXT NOT NULL DEFAULT '[]'",
+];
+migrations.forEach(sql => { try { db.exec(sql); } catch (_) {} });
+
 module.exports = db;

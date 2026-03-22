@@ -25,6 +25,128 @@ function InfoRow({ label, value }) {
   );
 }
 
+function Section({ title, children, className = '' }) {
+  return (
+    <div className={`card ${className}`}>
+      <h2 className="font-semibold text-gray-900 mb-4 pb-2 border-b">{title}</h2>
+      {children}
+    </div>
+  );
+}
+
+// ── Photos Gallery ──────────────────────────────────────────────────────────
+function PhotosGallery({ photos }) {
+  const [lightbox, setLightbox] = useState(null);
+  if (!photos || photos.length === 0) return null;
+
+  return (
+    <>
+      <Section title={`Supporting Photos (${photos.length})`}>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+          {photos.map((photo, i) => (
+            <button
+              key={i}
+              onClick={() => setLightbox(i)}
+              className="aspect-square rounded-lg overflow-hidden border border-gray-200 bg-gray-100 hover:opacity-90 transition-opacity focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <img
+                src={photo.dataUrl}
+                alt={photo.name || `Photo ${i + 1}`}
+                className="w-full h-full object-cover"
+              />
+            </button>
+          ))}
+        </div>
+      </Section>
+
+      {/* Lightbox */}
+      {lightbox !== null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80"
+          onClick={() => setLightbox(null)}>
+          <div className="relative max-w-4xl max-h-full" onClick={e => e.stopPropagation()}>
+            <img
+              src={photos[lightbox].dataUrl}
+              alt={photos[lightbox].name || `Photo ${lightbox + 1}`}
+              className="max-h-[85vh] max-w-full rounded-lg shadow-2xl object-contain"
+            />
+            <p className="text-white text-sm text-center mt-2 opacity-75">
+              {photos[lightbox].name || `Photo ${lightbox + 1}`} — {lightbox + 1} / {photos.length}
+            </p>
+            {/* Prev / Next */}
+            {photos.length > 1 && (
+              <>
+                <button
+                  onClick={() => setLightbox((lightbox - 1 + photos.length) % photos.length)}
+                  className="absolute left-2 top-1/2 -translate-y-1/2 bg-black/50 text-white rounded-full w-10 h-10 flex items-center justify-center hover:bg-black/70"
+                >
+                  ‹
+                </button>
+                <button
+                  onClick={() => setLightbox((lightbox + 1) % photos.length)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 bg-black/50 text-white rounded-full w-10 h-10 flex items-center justify-center hover:bg-black/70"
+                >
+                  ›
+                </button>
+              </>
+            )}
+            <button
+              onClick={() => setLightbox(null)}
+              className="absolute top-2 right-2 bg-black/50 text-white rounded-full w-8 h-8 flex items-center justify-center hover:bg-black/70 text-sm"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+// ── Bids Table ──────────────────────────────────────────────────────────────
+function BidsTable({ bids }) {
+  if (!bids || bids.length === 0) return null;
+
+  const lowestIdx = bids.reduce((low, b, i) => {
+    const a = Number(b.amount);
+    return a > 0 && a < Number(bids[low]?.amount || Infinity) ? i : low;
+  }, -1);
+
+  return (
+    <Section title={`Competitive Bids / Quotes (${bids.length})`}>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-gray-200">
+              <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide pb-2 pr-4">Vendor / Supplier</th>
+              <th className="text-right text-xs font-semibold text-gray-500 uppercase tracking-wide pb-2 pr-4">Amount</th>
+              <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide pb-2">Notes</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {bids.map((bid, i) => (
+              <tr key={i} className={i === lowestIdx ? 'bg-green-50' : ''}>
+                <td className="py-3 pr-4 font-medium text-gray-900">
+                  {bid.vendor || '—'}
+                  {i === lowestIdx && (
+                    <span className="ml-2 text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full font-medium">
+                      Lowest
+                    </span>
+                  )}
+                </td>
+                <td className="py-3 pr-4 text-right font-semibold text-gray-900">
+                  {bid.amount ? formatCurrency(Number(bid.amount)) : '—'}
+                </td>
+                <td className="py-3 text-gray-500">{bid.notes || '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Section>
+  );
+}
+
+// ── Main Component ──────────────────────────────────────────────────────────
 export default function RequestDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -147,13 +269,16 @@ export default function RequestDetail() {
     cancelled: 'Request Cancelled',
   }[request.status];
 
+  const photos = Array.isArray(request.photos) ? request.photos : [];
+  const bids = Array.isArray(request.bids) ? request.bids : [];
+
   return (
     <div className="max-w-4xl mx-auto">
       <button onClick={() => navigate(-1)} className="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1 mb-4">
         ← Back
       </button>
 
-      {/* Header */}
+      {/* Header card */}
       <div className="card mb-6">
         <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
           <div className="min-w-0">
@@ -184,7 +309,7 @@ export default function RequestDetail() {
             )}
             {canSubmit() && (
               <button onClick={handleSubmit} disabled={actionLoading} className="btn-primary">
-                {actionLoading ? 'Submitting...' : 'Submit for Approval'}
+                {actionLoading ? 'Submitting…' : 'Submit for Approval'}
               </button>
             )}
             {canApprove() && (
@@ -214,10 +339,25 @@ export default function RequestDetail() {
       </div>
 
       <div className="grid lg:grid-cols-3 gap-6">
-        {/* Left column: details */}
+        {/* Left column */}
         <div className="lg:col-span-2 space-y-6">
-          <div className="card">
-            <h2 className="font-semibold text-gray-900 mb-4">Request Details</h2>
+
+          {/* Problem Statement */}
+          {request.problem && (
+            <Section title="Problem Statement">
+              <p className="text-sm text-gray-900 whitespace-pre-wrap">{request.problem}</p>
+            </Section>
+          )}
+
+          {/* Proposed Solution */}
+          {request.solution && (
+            <Section title="Proposed Solution">
+              <p className="text-sm text-gray-900 whitespace-pre-wrap">{request.solution}</p>
+            </Section>
+          )}
+
+          {/* Request Details */}
+          <Section title="Request Details">
             <dl className="space-y-4">
               <div>
                 <dt className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Description</dt>
@@ -231,10 +371,16 @@ export default function RequestDetail() {
               <InfoRow label="Expected ROI" value={request.expected_roi} />
               <InfoRow label="Preferred Vendor" value={request.vendor} />
             </dl>
-          </div>
+          </Section>
 
-          <div className="card">
-            <h2 className="font-semibold text-gray-900 mb-4">Request Info</h2>
+          {/* Bids */}
+          <BidsTable bids={bids} />
+
+          {/* Photos */}
+          <PhotosGallery photos={photos} />
+
+          {/* Request Info */}
+          <Section title="Request Info">
             <dl className="grid grid-cols-2 gap-4">
               <InfoRow label="Submitted By" value={request.requester_name} />
               <InfoRow label="Department" value={request.department} />
@@ -243,7 +389,7 @@ export default function RequestDetail() {
               <InfoRow label="Created" value={formatDate(request.created_at)} />
               <InfoRow label="Last Updated" value={formatDate(request.updated_at)} />
             </dl>
-          </div>
+          </Section>
         </div>
 
         {/* Right column: timeline */}
@@ -268,13 +414,13 @@ export default function RequestDetail() {
             <div>
               <label className="form-label">Comments (optional)</label>
               <textarea value={comments} onChange={e => setComments(e.target.value)}
-                rows={3} className="form-textarea" placeholder="Add any comments or conditions..." />
+                rows={3} className="form-textarea" placeholder="Add any comments or conditions…" />
             </div>
             {error && <p className="text-red-600 text-sm mt-2">{error}</p>}
             <div className="flex gap-3 mt-4">
               <button onClick={() => setShowApproveModal(false)} className="btn-secondary flex-1">Cancel</button>
               <button onClick={handleApprove} disabled={actionLoading} className="btn-success flex-1">
-                {actionLoading ? 'Approving...' : 'Confirm Approval'}
+                {actionLoading ? 'Approving…' : 'Confirm Approval'}
               </button>
             </div>
           </div>
@@ -293,13 +439,13 @@ export default function RequestDetail() {
             <div>
               <label className="form-label">Rejection Reason *</label>
               <textarea value={comments} onChange={e => setComments(e.target.value)}
-                rows={4} className="form-textarea" placeholder="Provide a clear reason for rejection..." />
+                rows={4} className="form-textarea" placeholder="Provide a clear reason for rejection…" />
             </div>
             {error && <p className="text-red-600 text-sm mt-2">{error}</p>}
             <div className="flex gap-3 mt-4">
               <button onClick={() => setShowRejectModal(false)} className="btn-secondary flex-1">Cancel</button>
               <button onClick={handleReject} disabled={actionLoading} className="btn-danger flex-1">
-                {actionLoading ? 'Rejecting...' : 'Confirm Rejection'}
+                {actionLoading ? 'Rejecting…' : 'Confirm Rejection'}
               </button>
             </div>
           </div>

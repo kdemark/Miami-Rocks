@@ -5,7 +5,26 @@ const { authenticate } = require('../middleware/auth');
 
 const router = express.Router();
 
+// Routing thresholds
+// < $2,500  → Manager only
+// $2,500–$49,999 → Manager → Finance
+// ≥ $50,000 → Manager → Finance → Executive
+const MANAGER_THRESHOLD = 2500;
 const EXECUTIVE_THRESHOLD = 50000;
+
+function parseJson(val, fallback = []) {
+  if (!val) return fallback;
+  try { return JSON.parse(val); } catch (_) { return fallback; }
+}
+
+function enrichRequest(r) {
+  if (!r) return r;
+  return {
+    ...r,
+    photos: parseJson(r.photos, []),
+    bids: parseJson(r.bids, []),
+  };
+}
 
 // Get all requests (filtered by role)
 router.get('/', authenticate, (req, res) => {
@@ -27,16 +46,33 @@ router.get('/', authenticate, (req, res) => {
     query += ' AND (r.requester_id = ? OR r.status IN (?,?,?,?,?))';
     params.push(user.id, 'pending_manager', 'pending_finance', 'pending_executive', 'approved', 'rejected');
   }
-  // finance, executive, admin see all
 
   if (status) { query += ' AND r.status = ?'; params.push(status); }
   if (department) { query += ' AND r.department = ?'; params.push(department); }
-  if (search) { query += ' AND (r.title LIKE ? OR r.description LIKE ?)'; params.push(`%${search}%`, `%${search}%`); }
+  if (search) { query += ' AND (r.title LIKE ? OR r.description LIKE ? OR r.problem LIKE ?)'; params.push(`%${search}%`, `%${search}%`, `%${search}%`); }
 
   query += ' ORDER BY r.created_at DESC';
 
-  const requests = db.prepare(query).all(...params);
+  const requests = db.prepare(query).all(...params).map(enrichRequest);
   res.json(requests);
+});
+
+// Get similar (approved) requests by category — used for formatting reference
+router.get('/similar', authenticate, (req, res) => {
+  const { category } = req.query;
+  if (!category) return res.json([]);
+
+  const rows = db.prepare(`
+    SELECT r.id, r.title, r.amount, r.category, r.department, r.problem, r.solution,
+           r.justification, r.bids, r.created_at, u.name as requester_name
+    FROM capex_requests r
+    JOIN users u ON r.requester_id = u.id
+    WHERE r.status = 'approved' AND r.category = ?
+    ORDER BY r.created_at DESC
+    LIMIT 10
+  `).all(category);
+
+  res.json(rows.map(r => ({ ...r, bids: parseJson(r.bids, []) })));
 });
 
 // Get single request with approval history
@@ -58,12 +94,16 @@ router.get('/:id', authenticate, (req, res) => {
     ORDER BY a.created_at ASC
   `).all(req.params.id);
 
-  res.json({ ...request, actions });
+  res.json({ ...enrichRequest(request), actions });
 });
 
 // Create new CAPEX request
 router.post('/', authenticate, (req, res) => {
-  const { title, description, amount, category, justification, business_case, vendor, expected_roi, priority } = req.body;
+  const {
+    title, description, amount, category, problem, solution,
+    justification, business_case, vendor, expected_roi, priority,
+    photos, bids,
+  } = req.body;
 
   if (!title || !description || !amount || !category || !justification) {
     return res.status(400).json({ error: 'Required fields: title, description, amount, category, justification' });
@@ -76,12 +116,21 @@ router.post('/', authenticate, (req, res) => {
   const now = new Date().toISOString();
 
   db.prepare(`
-    INSERT INTO capex_requests (id,title,description,amount,category,justification,business_case,vendor,expected_roi,priority,department,requester_id,status,created_at,updated_at)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'draft',?,?)
-  `).run(id, title, description, Number(amount), category, justification, business_case || null, vendor || null, expected_roi || null, priority || 'medium', req.user.department, req.user.id, now, now);
+    INSERT INTO capex_requests
+      (id,title,description,amount,category,problem,solution,justification,business_case,vendor,expected_roi,priority,photos,bids,department,requester_id,status,created_at,updated_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'draft',?,?)
+  `).run(
+    id, title, description, Number(amount), category,
+    problem || null, solution || null,
+    justification, business_case || null, vendor || null,
+    expected_roi || null, priority || 'medium',
+    JSON.stringify(Array.isArray(photos) ? photos : []),
+    JSON.stringify(Array.isArray(bids) ? bids : []),
+    req.user.department, req.user.id, now, now
+  );
 
   const request = db.prepare('SELECT * FROM capex_requests WHERE id=?').get(id);
-  res.status(201).json(request);
+  res.status(201).json(enrichRequest(request));
 });
 
 // Submit request (draft → pending_manager)
@@ -100,7 +149,7 @@ router.post('/:id/submit', authenticate, (req, res) => {
   db.prepare(`INSERT INTO approval_actions (id,request_id,approver_id,action,step,comments,created_at) VALUES (?,?,?,?,?,?,?)`)
     .run(uuidv4(), request.id, req.user.id, 'submitted', 'submission', req.body.comments || null, now);
 
-  res.json(db.prepare('SELECT * FROM capex_requests WHERE id=?').get(request.id));
+  res.json(enrichRequest(db.prepare('SELECT * FROM capex_requests WHERE id=?').get(request.id)));
 });
 
 // Approve request
@@ -116,7 +165,8 @@ router.post('/:id/approve', authenticate, (req, res) => {
 
   if (request.status === 'pending_manager' && (user.role === 'manager' || user.role === 'admin')) {
     step = 'manager';
-    nextStatus = 'pending_finance';
+    // Under $2,500 → manager approval is final; at or above → goes to finance
+    nextStatus = request.amount >= MANAGER_THRESHOLD ? 'pending_finance' : 'approved';
   } else if (request.status === 'pending_finance' && (user.role === 'finance' || user.role === 'admin')) {
     step = 'finance';
     nextStatus = request.amount >= EXECUTIVE_THRESHOLD ? 'pending_executive' : 'approved';
@@ -131,7 +181,7 @@ router.post('/:id/approve', authenticate, (req, res) => {
   db.prepare(`INSERT INTO approval_actions (id,request_id,approver_id,action,step,comments,created_at) VALUES (?,?,?,?,?,?,?)`)
     .run(uuidv4(), request.id, user.id, 'approved', step, comments || null, now);
 
-  // If approved, check budget availability then allocate
+  // If fully approved, check budget availability then allocate
   if (nextStatus === 'approved') {
     const fiscalYear = new Date().getFullYear();
     const budget = db.prepare(
@@ -140,17 +190,19 @@ router.post('/:id/approve', authenticate, (req, res) => {
 
     if (budget && (budget.allocated_amount + request.amount) > budget.total_amount) {
       return res.status(422).json({
-        error: `Insufficient budget: ${request.department} / ${request.category} has $${(budget.total_amount - budget.allocated_amount).toLocaleString()} remaining but this request requires $${request.amount.toLocaleString()}`
+        error: `Insufficient budget: ${request.department} / ${request.category} has $${(budget.total_amount - budget.allocated_amount).toLocaleString()} remaining but this request requires $${request.amount.toLocaleString()}`,
       });
     }
 
-    db.prepare(`
-      UPDATE budgets SET allocated_amount = allocated_amount + ?, updated_at = ?
-      WHERE department=? AND fiscal_year=? AND category=?
-    `).run(request.amount, now, request.department, fiscalYear, request.category);
+    if (budget) {
+      db.prepare(`
+        UPDATE budgets SET allocated_amount = allocated_amount + ?, updated_at = ?
+        WHERE department=? AND fiscal_year=? AND category=?
+      `).run(request.amount, now, request.department, fiscalYear, request.category);
+    }
   }
 
-  res.json(db.prepare('SELECT * FROM capex_requests WHERE id=?').get(request.id));
+  res.json(enrichRequest(db.prepare('SELECT * FROM capex_requests WHERE id=?').get(request.id)));
 });
 
 // Reject request
@@ -189,7 +241,7 @@ router.post('/:id/reject', authenticate, (req, res) => {
   db.prepare(`INSERT INTO approval_actions (id,request_id,approver_id,action,step,comments,created_at) VALUES (?,?,?,?,?,?,?)`)
     .run(uuidv4(), request.id, user.id, 'rejected', step, comments, now);
 
-  res.json(db.prepare('SELECT * FROM capex_requests WHERE id=?').get(request.id));
+  res.json(enrichRequest(db.prepare('SELECT * FROM capex_requests WHERE id=?').get(request.id)));
 });
 
 // Cancel request (requester only, while in draft or pending_manager)
@@ -205,7 +257,7 @@ router.post('/:id/cancel', authenticate, (req, res) => {
 
   const now = new Date().toISOString();
   db.prepare("UPDATE capex_requests SET status='cancelled', updated_at=? WHERE id=?").run(now, request.id);
-  res.json(db.prepare('SELECT * FROM capex_requests WHERE id=?').get(request.id));
+  res.json(enrichRequest(db.prepare('SELECT * FROM capex_requests WHERE id=?').get(request.id)));
 });
 
 // Update draft request
@@ -219,26 +271,37 @@ router.put('/:id', authenticate, (req, res) => {
     return res.status(400).json({ error: 'Only draft requests can be edited' });
   }
 
-  const { title, description, amount, category, justification, business_case, vendor, expected_roi, priority } = req.body;
+  const {
+    title, description, amount, category, problem, solution,
+    justification, business_case, vendor, expected_roi, priority,
+    photos, bids,
+  } = req.body;
   const now = new Date().toISOString();
 
   db.prepare(`
-    UPDATE capex_requests SET title=?,description=?,amount=?,category=?,justification=?,
-    business_case=?,vendor=?,expected_roi=?,priority=?,updated_at=? WHERE id=?
+    UPDATE capex_requests
+    SET title=?,description=?,amount=?,category=?,problem=?,solution=?,
+        justification=?,business_case=?,vendor=?,expected_roi=?,priority=?,
+        photos=?,bids=?,updated_at=?
+    WHERE id=?
   `).run(
     title || request.title,
     description || request.description,
     amount !== undefined ? Number(amount) : request.amount,
     category || request.category,
+    problem !== undefined ? problem : request.problem,
+    solution !== undefined ? solution : request.solution,
     justification || request.justification,
     business_case !== undefined ? business_case : request.business_case,
     vendor !== undefined ? vendor : request.vendor,
     expected_roi !== undefined ? expected_roi : request.expected_roi,
     priority || request.priority,
+    photos !== undefined ? JSON.stringify(Array.isArray(photos) ? photos : []) : request.photos,
+    bids !== undefined ? JSON.stringify(Array.isArray(bids) ? bids : []) : request.bids,
     now, request.id
   );
 
-  res.json(db.prepare('SELECT * FROM capex_requests WHERE id=?').get(request.id));
+  res.json(enrichRequest(db.prepare('SELECT * FROM capex_requests WHERE id=?').get(request.id)));
 });
 
 module.exports = router;
