@@ -131,12 +131,23 @@ router.post('/:id/approve', authenticate, (req, res) => {
   db.prepare(`INSERT INTO approval_actions (id,request_id,approver_id,action,step,comments,created_at) VALUES (?,?,?,?,?,?,?)`)
     .run(uuidv4(), request.id, user.id, 'approved', step, comments || null, now);
 
-  // If approved, allocate budget
+  // If approved, check budget availability then allocate
   if (nextStatus === 'approved') {
+    const fiscalYear = new Date().getFullYear();
+    const budget = db.prepare(
+      'SELECT * FROM budgets WHERE department=? AND fiscal_year=? AND category=?'
+    ).get(request.department, fiscalYear, request.category);
+
+    if (budget && (budget.allocated_amount + request.amount) > budget.total_amount) {
+      return res.status(422).json({
+        error: `Insufficient budget: ${request.department} / ${request.category} has $${(budget.total_amount - budget.allocated_amount).toLocaleString()} remaining but this request requires $${request.amount.toLocaleString()}`
+      });
+    }
+
     db.prepare(`
       UPDATE budgets SET allocated_amount = allocated_amount + ?, updated_at = ?
       WHERE department=? AND fiscal_year=? AND category=?
-    `).run(request.amount, now, request.department, new Date().getFullYear(), request.category);
+    `).run(request.amount, now, request.department, fiscalYear, request.category);
   }
 
   res.json(db.prepare('SELECT * FROM capex_requests WHERE id=?').get(request.id));
