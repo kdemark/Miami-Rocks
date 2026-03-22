@@ -1,0 +1,32 @@
+{
+  "expo": {
+    "name": "Miami Rocks Asset Manager",
+    "slug": "miami-rocks-asset-manager",
+    "version": "1.0.0",
+    "orientation": "default",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0B0F1A"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.miamirocks.assetmanager"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#0B0F1A",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "package": "com.miamirocks.assetmanager"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "description": "Hotel asset management system with AI-powered replacement value estimation."
+  }
+}
