@@ -50,4 +50,10 @@ export const api = {
 
   // Dashboard
   getDashboard: () => request('GET', '/dashboard'),
+
+  // Spending Tracker
+  getSpendingTracker: (params = {}) => {
+    const q = new URLSearchParams(params).toString();
+    return request('GET', `/spending-tracker${q ? '?' + q : ''}`);
+  },
 };

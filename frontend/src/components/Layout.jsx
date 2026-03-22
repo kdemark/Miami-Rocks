@@ -49,7 +49,10 @@ export function Layout({ children, pendingCount = 0 }) {
     { to: '/dashboard', icon: '📊', label: 'Dashboard' },
     { to: '/requests', icon: '📋', label: 'CAPEX Requests', badge: showApprovalBadge ? pendingCount : 0 },
     { to: '/requests/new', icon: '➕', label: 'New Request' },
-    ...(user?.role !== 'requester' ? [{ to: '/budgets', icon: '💰', label: 'Budget Management' }] : []),
+    ...(user?.role !== 'requester' ? [
+      { to: '/budgets', icon: '💰', label: 'Budget Management' },
+      { to: '/spending-tracker', icon: '📉', label: 'Spending Tracker' },
+    ] : []),
   ];
 
   const NavContent = () => (

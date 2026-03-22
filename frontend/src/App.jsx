@@ -10,6 +10,7 @@ import RequestList from './pages/RequestList';
 import RequestDetail from './pages/RequestDetail';
 import RequestForm from './pages/RequestForm';
 import BudgetManagement from './pages/BudgetManagement';
+import SpendingTracker from './pages/SpendingTracker';
 
 function ProtectedRoutes() {
   const { user, loading } = useAuth();
@@ -40,6 +41,9 @@ function ProtectedRoutes() {
         <Route path="/requests/:id/edit" element={<RequestForm />} />
         {user.role !== 'requester' && (
           <Route path="/budgets" element={<BudgetManagement />} />
+        )}
+        {user.role !== 'requester' && (
+          <Route path="/spending-tracker" element={<SpendingTracker />} />
         )}
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>

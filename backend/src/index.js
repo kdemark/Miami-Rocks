@@ -12,6 +12,7 @@ app.use('/api/auth', require('./routes/auth'));
 app.use('/api/requests', require('./routes/requests'));
 app.use('/api/budgets', require('./routes/budgets'));
 app.use('/api/dashboard', require('./routes/dashboard'));
+app.use('/api/spending-tracker', require('./routes/spending-tracker'));
 
 app.get('/api/health', (_, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }));
 
