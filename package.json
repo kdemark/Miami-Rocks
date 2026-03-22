@@ -1,0 +1,15 @@
+{
+  "name": "miami-rocks-capex",
+  "version": "1.0.0",
+  "description": "CAPEX Approval Workflow, Budgeting System, and End User Request Form",
+  "private": true,
+  "workspaces": ["backend", "frontend"],
+  "scripts": {
+    "dev": "concurrently \"npm run dev --workspace=backend\" \"npm run dev --workspace=frontend\"",
+    "start": "concurrently \"npm run start --workspace=backend\" \"npm run preview --workspace=frontend\"",
+    "install:all": "npm install && npm install --workspace=backend && npm install --workspace=frontend"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
